@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-rag-docs-assistant"
+version = "0.1.0"
+description = "An agentic RAG assistant for technical documentation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chromadb>=1.0",
+    "fastapi>=0.115",
+    "openai>=1.0",
+    "pypdf>=6.0",
+    "python-dotenv>=1.0",
+    "sentence-transformers>=5.0",
+    "tavily-python>=0.7",
+    "uvicorn[standard]>=0.30",
+]
+
+[project.scripts]
+agentic-rag = "agentic_rag.cli:main"
+agentic-rag-web = "agentic_rag.web:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agentic_rag = ["static/*.html"]

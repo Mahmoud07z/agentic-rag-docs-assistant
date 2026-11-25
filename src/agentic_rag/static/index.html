@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docs Assistant</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172033; background: #f3f6fb; }
+    body { max-width: 820px; margin: 48px auto; padding: 0 20px; }
+    header, main { background: white; border: 1px solid #dce3ef; border-radius: 14px; padding: 24px; }
+    header { margin-bottom: 18px; }
+    h1 { margin: 0 0 6px; font-size: 1.5rem; }
+    p { margin: 6px 0; color: #526078; }
+    form { display: grid; gap: 12px; margin: 22px 0; }
+    textarea { resize: vertical; min-height: 92px; padding: 12px; border: 1px solid #bec9da; border-radius: 8px; font: inherit; }
+    button { justify-self: start; padding: 10px 16px; border: 0; border-radius: 8px; background: #2158c5; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #answer { white-space: pre-wrap; }
+    #status { min-height: 24px; }
+    li { margin: 8px 0; }
+    .tag { color: #526078; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Technical Documentation Assistant</h1>
+    <p>Ask a question about the indexed documents. Answers include evidence links and locations.</p>
+    <p id="status" role="status">Loading assistant status…</p>
+  </header>
+  <main>
+    <button id="index" type="button">Index documents</button>
+    <form id="question-form">
+      <label for="question">Your question</label>
+      <textarea id="question" required maxlength="2000" placeholder="For example: What is the API rate limit?"></textarea>
+      <button id="ask" type="submit">Ask</button>
+    </form>
+    <section aria-live="polite">
+      <h2>Answer</h2>
+      <p id="answer">Index the documents, then ask a question.</p>
+      <ul id="sources"></ul>
+      <p id="route" class="tag"></p>
+    </section>
+  </main>
+<script>
+const statusNode = document.querySelector('#status');
+const answerNode = document.querySelector('#answer');
+const sourceList = document.querySelector('#sources');
+const routeNode = document.querySelector('#route');
+const indexButton = document.querySelector('#index');
+const askButton = document.querySelector('#ask');
+
+async function loadStatus() {
+  try {
+    const response = await fetch('/api/health');
+    const status = await response.json();
+    statusNode.textContent = `LLM ${status.llm_configured ? 'configured' : 'not configured (retrieval-only mode)'} · Web search ${status.web_search_configured ? 'configured' : 'off'}`;
+  } catch { statusNode.textContent = 'Could not reach the assistant API.'; }
+}
+
+indexButton.addEventListener('click', async () => {
+  indexButton.disabled = true;
+  statusNode.textContent = 'Reading documents and building the local index…';
+  try {
+    const response = await fetch('/api/index', { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Indexing failed');
+    statusNode.textContent = `Indexed ${data.indexed_chunks} chunks from ${data.documents_directory}.`;
+  } catch (error) { statusNode.textContent = error.message; }
+  finally { indexButton.disabled = false; }
+});
+
+document.querySelector('#question-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  askButton.disabled = true;
+  answerNode.textContent = 'Searching evidence…';
+  sourceList.replaceChildren();
+  routeNode.textContent = '';
+  try {
+    const response = await fetch('/api/ask', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: document.querySelector('#question').value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'The request failed');
+    answerNode.textContent = data.answer;
+    for (const source of data.sources) {
+      const item = document.createElement('li');
+      let safeUrl = null;
+      try {
+        const parsedUrl = new URL(source.url);
+        if (parsedUrl.protocol === 'https:' || parsedUrl.protocol === 'http:') safeUrl = parsedUrl.href;
+      } catch { /* Local sources and malformed URLs are displayed as plain text. */ }
+      const title = document.createElement(safeUrl ? 'a' : 'span');
+      title.textContent = `[${source.label}] ${source.title}`;
+      if (safeUrl) { title.href = safeUrl; title.target = '_blank'; title.rel = 'noreferrer'; }
+      item.append(title);
+      if (source.page) item.append(document.createTextNode(` · page ${source.page}`));
+      if (source.section) item.append(document.createTextNode(` · section ${source.section}`));
+      sourceList.append(item);
+    }
+    routeNode.textContent = `Route: ${data.route} · Review attempts: ${data.review_attempts}`;
+  } catch (error) { answerNode.textContent = error.message; }
+  finally { askButton.disabled = false; }
+});
+loadStatus();
+</script>
+</body>
+</html>
